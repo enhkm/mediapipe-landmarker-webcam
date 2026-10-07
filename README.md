@@ -3,6 +3,10 @@
 웹캠 영상에서 **손 랜드마크**와 **얼굴 랜드마크**를 실시간으로 검출하는 Python 예제입니다.
 Google [MediaPipe Tasks](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker)의 Hand Landmarker / Face Landmarker를 사용합니다.
 
+손 랜드마크로 **나만의 제스처를 학습**하고, 학습한 모델을 **웹에서 실행**하는 예제도 포함되어 있습니다.
+
+**웹 데모: https://enhkm.github.io/mediapipe-landmarker-webcam/** (웹캠 허용 필요, `nike` 제스처 → 스우시 로고, `ok` 제스처 → 👌)
+
 ## 파일 구성
 
 | 파일 | 설명 |
@@ -11,6 +15,12 @@ Google [MediaPipe Tasks](https://ai.google.dev/edge/mediapipe/solutions/vision/h
 | `face_landmarker_webcam.py` | 얼굴 랜드마크 검출 (478개 점 + 표정 blendshape) |
 | `hand_landmarker.task` | 손 모델 (float16, 7.8MB) |
 | `face_landmarker.task` | 얼굴 모델 (float16, 3.7MB) |
+| `gesture_app.py` | 제스처 수집 / 학습 / 인식 UI 앱 (tkinter) |
+| `gesture_train.py` | 제스처 분류기 학습 (앱의 [학습] 버튼이 사용) |
+| `gesture_common.py` | 제스처 앱/학습 공용 코드 (특징 추출 등) |
+| `gesture_data.csv` | 수집한 제스처 데이터 (nike / none / ok) |
+| `gesture_model.joblib` | 학습된 제스처 분류기 |
+| `web/` | 웹 버전 (GitHub Pages로 배포) |
 
 모델 파일은 Google 공식 배포본이며 저장소에 포함되어 있어 clone 후 바로 실행할 수 있습니다.
 
@@ -42,6 +52,39 @@ python face_landmarker_webcam.py
 - 좌상단에 FPS, 검출된 얼굴 수, 점수가 높은 표정 blendshape 5개 (예: `eyeBlinkLeft`, `jawOpen`)
 
 두 스크립트 모두 거울 모드(좌우 반전)로 표시하며, 웹캠 프레임을 읽지 못하면 메시지를 출력하고 종료합니다.
+
+## 나만의 제스처 학습
+
+```bash
+pip install mediapipe opencv-python scikit-learn pillow
+python gesture_app.py
+```
+
+1. 오른쪽 입력창에 제스처 이름을 쓰고 **[추가]**
+2. 손 모양을 만들고 **SPACE** (또는 [녹화])로 수집. 제스처당 100~300개 정도, 각도·거리를 조금씩 바꿔 가며
+3. 제스처를 2개 이상 모았으면 **[학습]** → 아래에 정확도와 혼동 행렬이 표시됨
+4. 모드를 **인식**으로 바꿔 실시간 확인
+
+손 21개 점을 손목 기준 상대 좌표로 바꾸고 손 크기로 나눠서 화면 위치·거리에 상관없게 만든 뒤, 63차원 벡터를 작은 MLP(scikit-learn)로 분류합니다. 왼손은 x를 뒤집어 오른손과 같은 모양으로 맞추므로 한 손으로만 수집해도 양손 모두 인식됩니다.
+
+아무 제스처도 아닐 때를 위해 `none` 같은 "기타" 제스처도 함께 수집해 두면 오인식이 줄어듭니다.
+
+## 웹 버전 (GitHub Pages)
+
+`web/`은 브라우저에서 MediaPipe Tasks JS로 손을 검출하고, Python에서 학습한 모델을 JavaScript로 그대로 계산합니다.
+
+- 학습할 때 `web/gesture_model.json` (스케일러 + MLP 가중치)도 함께 저장되므로, 다시 학습하고 push하면 웹에도 반영됩니다.
+- Python과 같은 조건이 되도록 640x480(4:3) 거울 모드 프레임으로 검출합니다.
+- MediaPipe JS와 wasm은 반드시 같은 버전(`@1.1.0`)으로 불러야 합니다. 버전을 빼면 서로 다른 버전이 섞여 `LinkError`가 납니다.
+
+로컬에서 실행:
+
+```bash
+python -m http.server 8000
+# http://127.0.0.1:8000/web/ 접속
+```
+
+웹캠은 `https` 또는 `localhost`에서만 쓸 수 있어서 파일을 더블클릭으로 열면 동작하지 않습니다.
 
 ## 주의: 한글 경로 문제 (Windows)
 

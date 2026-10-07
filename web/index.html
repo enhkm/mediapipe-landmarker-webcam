@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gesture Overlay</title>
+  <style>
+    :root {
+      --bg: #f4f4f5; --panel: #ffffff; --text: #18181b; --muted: #71717a;
+      --bar: #e4e4e7; --accent: #7c3aed;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111113; --panel: #1c1c1f; --text: #f4f4f5; --muted: #a1a1aa; --bar: #2e2e33; --accent: #a78bfa; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: "Malgun Gothic", system-ui, sans-serif; }
+    main { max-width: 1000px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr 260px; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+    h1 { grid-column: 1 / -1; margin: 0; font-size: 20px; }
+    .stage { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 12px; overflow: hidden; }
+    .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+    .overlay > * { opacity: 0; transform: scale(0.6); transition: opacity .2s, transform .25s cubic-bezier(.2, 1.4, .5, 1); }
+    .overlay > .show { opacity: 1; transform: scale(1); }
+    #okEmoji { font-size: min(40vw, 260px); line-height: 1; filter: drop-shadow(0 6px 20px rgba(0,0,0,.5)); }
+    #nikeLogo { width: 70%; filter: drop-shadow(0 6px 20px rgba(0,0,0,.6)); }
+    .panel { background: var(--panel); border-radius: 12px; padding: 16px; align-self: start; }
+    .label { font-size: 28px; font-weight: 700; text-align: center; margin: 4px 0 12px; }
+    .row { display: grid; grid-template-columns: 60px 1fr 44px; gap: 8px; align-items: center; margin: 6px 0; font-size: 14px; }
+    .track { height: 10px; background: var(--bar); border-radius: 5px; overflow: hidden; }
+    .fill { height: 100%; width: 0; background: var(--accent); transition: width .1s; }
+    .num { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .status { color: var(--muted); font-size: 13px; margin-top: 12px; line-height: 1.5; }
+    label.slider { display: block; font-size: 13px; color: var(--muted); margin-top: 12px; }
+    label.slider input { width: 100%; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>제스처 인식 - nike / ok</h1>
+    <div class="stage">
+      <canvas id="view" width="640" height="480"></canvas>
+      <div class="overlay">
+        <svg id="nikeLogo" viewBox="0 0 200 100" aria-label="swoosh">
+          <path fill="#ffffff" d="M 30 40 C 5 70, 10 95, 45 92 C 70 90, 120 65, 195 25 C 130 55, 80 75, 55 75 C 35 75, 25 62, 30 40 Z"/>
+        </svg>
+      </div>
+      <div class="overlay"><div id="okEmoji">👌</div></div>
+    </div>
+    <section class="panel">
+      <div class="label" id="label">-</div>
+      <div id="bars"></div>
+      <label class="slider">최소 확률 <span id="confText">0.80</span>
+        <input id="conf" type="range" min="0.3" max="0.99" step="0.01" value="0.8">
+      </label>
+      <div class="status" id="status">모델 불러오는 중...</div>
+    </section>
+  </main>
+  <video id="video" playsinline muted hidden></video>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
