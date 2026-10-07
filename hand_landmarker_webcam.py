@@ -33,8 +33,9 @@ def draw_hands(frame, result):
         for x, y in pts:
             cv2.circle(frame, (x, y), 4, (0, 0, 255), -1)
 
-        # 화면을 좌우 반전해서 보여주므로 Left/Right 라벨도 그대로 쓰면 사용자 기준과 일치함
-        label = f"{handedness[0].category_name} {handedness[0].score:.2f}"
+        # MediaPipe 라벨이 사용자 기준과 반대로 나오므로 뒤집어서 표시
+        name = {"Left": "Right", "Right": "Left"}[handedness[0].category_name]
+        label = f"{name} {handedness[0].score:.2f}"
         x0 = min(p[0] for p in pts)
         y0 = min(p[1] for p in pts)
         cv2.putText(frame, label, (x0, max(y0 - 10, 20)),
