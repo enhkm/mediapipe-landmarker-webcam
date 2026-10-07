@@ -27,7 +27,8 @@ Google [MediaPipe Tasks](https://ai.google.dev/edge/mediapipe/solutions/vision/h
 ## 테스트 환경
 
 - Windows 11, Python 3.14
-- mediapipe 1.1.0, opencv-python 5.0.0
+- mediapipe 1.1.0, opencv-python 5.0.0, scikit-learn 1.9.1
+- 웹: Chrome, MediaPipe Tasks JS `@mediapipe/tasks-vision@1.1.0`
 
 ## 설치 및 실행
 
@@ -152,6 +153,89 @@ INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
 W0000 ... inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. ...
 W0000 ... landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. ...
 ```
+
+### Face Landmarker 모델 구조
+
+`face_landmarker.task`도 여러 모델이 묶인 번들입니다.
+
+| 모델 | 입력 크기 | 역할 |
+|---|---|---|
+| FaceDetector | 192 x 192 | 얼굴 위치 찾기 |
+| FaceMesh-V2 | 256 x 256 | 얼굴 랜드마크 478개 (홍채 포함) |
+| Blendshape | 1 x 146 x 2 | 랜드마크 일부로 표정 점수 52개 계산 |
+
+`output_face_blendshapes=True`를 줘야 `eyeBlinkLeft`, `jawOpen` 같은 표정 점수(0~1)가 나옵니다.
+
+### 제스처 분류: 이미지 대신 랜드마크로 학습
+
+이미지를 직접 학습하는 대신 Hand Landmarker가 뽑아 준 21개 점(63개 숫자)만 학습합니다. 입력이 작아서 제스처당 수백 개만 모아도 되고, 학습은 몇 초면 끝납니다.
+
+같은 손 모양이면 같은 숫자가 나오도록 특징을 정규화합니다 (`gesture_common.extract_features`).
+
+1. **위치**: 모든 점에서 손목(0번) 좌표를 빼서 화면 어디에 있든 같게
+2. **크기**: 손목~중지 뿌리(9번) 거리로 나눠서 카메라와의 거리에 상관없게
+3. **왼손/오른손**: 왼손이면 x 부호를 뒤집어 오른손 모양으로 맞춤
+
+분류기는 `StandardScaler` + `MLPClassifier(64, 32)`입니다 (입력 63 → 64 → 32 → 클래스 수, ReLU, 출력 softmax).
+
+학습할 때는 데이터의 20%를 떼어 평가한 뒤, 결과를 확인하고 나서 **전체 데이터로 다시 학습**해 저장합니다.
+
+현재 데이터 결과 (`nike` 318개, `none` 315개, `ok` 319개 / 테스트 191개):
+
+```
+테스트 정확도: 0.974
+
+혼동 행렬 (행=정답, 열=예측)
+        nike  none  ok
+nike      63     1   0
+none       2    61   0
+ok         1     1  62
+```
+
+`none`(아무 제스처도 아닌 손)을 따로 수집해 둔 것이 중요합니다. 없으면 손만 보여도 nike나 ok 중 하나로 억지로 분류됩니다.
+
+### tkinter 앱을 만들 때 주의한 점
+
+- **OpenCV는 한글을 못 그림**: `cv2.putText`의 기본 폰트는 영문만 지원해서 한글 제스처 이름이 깨집니다. 그래서 이름과 결과는 영상이 아니라 tkinter 라벨에 표시했습니다.
+- **SPACE 키 중복 동작**: 버튼을 클릭하면 버튼에 포커스가 남아서, SPACE를 누르면 그 버튼도 눌리고 녹화도 토글됩니다. 버튼에 `takefocus=False`를 줘서 막았습니다.
+- **이미지가 안 보이는 문제**: `ImageTk.PhotoImage`는 Python 변수로 참조를 유지하지 않으면 바로 지워집니다 (`self.video.image = img`).
+- **학습 중 화면 멈춤 방지**: 학습은 별도 스레드에서 돌리고, 끝나면 `root.after()`로 UI를 갱신합니다 (tkinter는 메인 스레드에서만 UI를 바꿔야 함).
+
+### Python 모델을 웹에서 돌리기
+
+scikit-learn 모델은 브라우저에서 그대로 쓸 수 없어서 **가중치만 JSON으로 꺼내고 계산은 JavaScript로 직접** 구현했습니다.
+
+```
+x = (특징 - mean) / scale                 # StandardScaler
+h = relu(x · W1 + b1)                      # 은닉층 1
+h = relu(h · W2 + b2)                      # 은닉층 2
+확률 = softmax(h · W3 + b3)                # 출력층
+```
+
+수집 데이터로 Python과 JavaScript 결과를 비교해서 확률 차이가 약 1e-7(float 오차 수준)임을 확인했습니다. 특징 추출 함수도 같은 값을 내는지 따로 비교했습니다.
+
+웹과 Python이 같은 결과를 내려면 **입력 조건도 같아야** 합니다.
+
+- **화면 비율**: 랜드마크 x, y는 이미지 폭·높이 기준 0~1 값이라 화면 비율이 다르면 손 모양 숫자가 찌그러집니다. Python 웹캠이 640x480(4:3)이라 웹에서도 영상을 4:3으로 잘라서 검출합니다.
+- **거울 모드**: Python에서 뒤집은 프레임으로 학습했으므로 웹에서도 뒤집은 프레임으로 검출합니다 (Left/Right 라벨 의미도 같아짐).
+
+그 외:
+
+- 확률을 최근 5프레임 평균으로 써서 로고가 깜빡이지 않게 했습니다.
+- `navigator.mediaDevices.getUserMedia`(웹캠)는 `https`나 `localhost`에서만 동작합니다.
+- Windows에서는 웹캠을 한 프로그램만 쓸 수 있어서, Python 앱이 켜져 있으면 브라우저가 웹캠을 못 엽니다.
+
+### GitHub Pages 배포
+
+```bash
+# 저장소 Settings > Pages 에서 해도 되고, gh CLI로는:
+gh api -X POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/"
+```
+
+- 저장소 루트를 그대로 배포하므로 `web/app.js`가 `../hand_landmarker.task`로 모델을 불러올 수 있습니다.
+- 루트 `index.html`은 `web/`으로 바로 넘겨 주는 페이지입니다.
+- `.nojekyll`을 두면 GitHub Pages가 Jekyll 변환 없이 파일을 그대로 올립니다.
+- push 후 1분 정도면 반영됩니다.
 
 ## 모델 다시 받기
 
